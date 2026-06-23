@@ -1,8 +1,8 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-
-TOKEN = "YOUR_BOT_TOKEN_HERE"
+import os
+TOKEN = os.environ["TOKEN"]
 
 # IDs
 TICKET_CATEGORY = 1518791516947087481
