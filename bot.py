@@ -2,7 +2,9 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-TOKEN = "YOUR_TOKEN"
+import os
+
+TOKEN = os.environ.get("TOKEN")
 
 BUYSELL_CATEGORY = 1518791516947087481
 AUCTION_CATEGORY = 1519082989827657901
