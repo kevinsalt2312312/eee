@@ -1,11 +1,10 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os
-TOKEN = os.environ["TOKEN"]
 
-# IDs
-TICKET_CATEGORY = 1518791516947087481
+TOKEN = "YOUR_TOKEN"
+
+BUYSELL_CATEGORY = 1518791516947087481
 AUCTION_CATEGORY = 1519082989827657901
 STAFF_ROLE_ID = 1506430627501703249
 
@@ -17,122 +16,143 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 # -----------------------------
-# CHECK ROLE
+# CHECK STAFF
 # -----------------------------
-def is_staff():
-    async def predicate(interaction: discord.Interaction):
-        role = interaction.guild.get_role(STAFF_ROLE_ID)
-        return role in interaction.user.roles
-    return app_commands.check(predicate)
+def is_staff(member: discord.Member):
+    return any(role.id == STAFF_ROLE_ID for role in member.roles)
 
 
 # -----------------------------
-# TICKET CREATOR
+# CREATE TICKET
 # -----------------------------
-async def create_ticket(interaction: discord.Interaction, ticket_type: str):
+async def create_ticket(interaction, t_type):
     guild = interaction.guild
     user = interaction.user
 
-    category_id = AUCTION_CATEGORY if ticket_type == "auction" else TICKET_CATEGORY
-    category = guild.get_channel(category_id)
+    category = guild.get_channel(
+        AUCTION_CATEGORY if t_type == "auction" else BUYSELL_CATEGORY
+    )
 
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-        guild.me: discord.PermissionOverwrite(view_channel=True)
+        user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True),
     }
 
     channel = await guild.create_text_channel(
-        name=f"{ticket_type}-{user.name}",
+        name=f"{t_type}-{user.name}",
         category=category,
         overwrites=overwrites
     )
 
-    if ticket_type == "buy":
-        embed = discord.Embed(
-            title="🛒 BUY TICKET",
-            description="Welcome! A staff member will assist you shortly.\n\nPlease explain what you want to buy clearly.",
-            color=discord.Color.green()
-        )
+    embed = discord.Embed(
+        title=f"{t_type.upper()} TICKET",
+        description=f"{user.mention} a staff member will assist you shortly.",
+        color=discord.Color.green()
+    )
 
-    elif ticket_type == "sell":
-        embed = discord.Embed(
-            title="💸 SELL TICKET",
-            description="Welcome! Please provide your item details and proof of ownership.",
-            color=discord.Color.blue()
-        )
-
-    else:
-        embed = discord.Embed(
-            title="🏆 AUCTION TICKET",
-            description="Submit your auction details below (item, starting bid, proof).",
-            color=discord.Color.gold()
-        )
-
-    await channel.send(content=f"{user.mention}", embed=embed)
+    await channel.send(embed=embed, view=TicketControlView())
     await interaction.response.send_message(f"Ticket created: {channel.mention}", ephemeral=True)
 
 
 # -----------------------------
-# BUTTON VIEW
+# TICKET CONTROLS
 # -----------------------------
-class TicketView(discord.ui.View):
+class TicketControlView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        self.claimed_by = None
 
-    @discord.ui.button(label="Buy Ticket", style=discord.ButtonStyle.green, custom_id="buy_ticket")
+    @discord.ui.button(label="Claim", style=discord.ButtonStyle.success)
+    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if not is_staff(interaction.user):
+            return await interaction.response.send_message("❌ Staff only.", ephemeral=True)
+
+        if self.claimed_by:
+            return await interaction.response.send_message(
+                f"Already claimed by {self.claimed_by.mention}",
+                ephemeral=True
+            )
+
+        self.claimed_by = interaction.user
+        await interaction.channel.send(f"👋 Claimed by {interaction.user.mention}")
+        await interaction.response.send_message("Claimed.", ephemeral=True)
+
+    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger)
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if not is_staff(interaction.user):
+            return await interaction.response.send_message("❌ Staff only.", ephemeral=True)
+
+        await interaction.response.send_message("Closing ticket...", ephemeral=True)
+        await interaction.channel.delete()
+
+
+# -----------------------------
+# PANELS (ONLY 1 BUTTON EACH)
+# -----------------------------
+class BuyPanel(discord.ui.View):
+    @discord.ui.button(label="Request Buy", style=discord.ButtonStyle.success)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
         await create_ticket(interaction, "buy")
 
-    @discord.ui.button(label="Sell Ticket", style=discord.ButtonStyle.blurple, custom_id="sell_ticket")
+
+class SellPanel(discord.ui.View):
+    @discord.ui.button(label="Request Sell", style=discord.ButtonStyle.primary)
     async def sell(self, interaction: discord.Interaction, button: discord.ui.Button):
         await create_ticket(interaction, "sell")
 
-    @discord.ui.button(label="Auction Ticket", style=discord.ButtonStyle.success, custom_id="auction_ticket")
+
+class AuctionPanel(discord.ui.View):
+    @discord.ui.button(label="Start Auction", style=discord.ButtonStyle.danger)
     async def auction(self, interaction: discord.Interaction, button: discord.ui.Button):
         await create_ticket(interaction, "auction")
 
 
 # -----------------------------
-# PANEL COMMAND
+# SLASH COMMANDS
 # -----------------------------
-@bot.tree.command(name="panel", description="Send ticket panel")
-@is_staff()
-async def panel(interaction: discord.Interaction):
+@bot.tree.command(name="buypanel")
+@app_commands.checks.has_role(STAFF_ROLE_ID)
+async def buypanel(interaction: discord.Interaction):
+
     embed = discord.Embed(
-        title="🎟️ TICKET SYSTEM",
-        description=(
-            "Choose an option below:\n\n"
-            "🛒 Buy Items\n"
-            "💸 Sell Items\n"
-            "🏆 Start Auctions\n\n"
-            "All transactions are handled securely inside tickets."
-        ),
-        color=discord.Color.dark_teal()
+        title="🛒 BUY PANEL",
+        description="Click below to request a buy ticket.",
+        color=discord.Color.green()
     )
 
-    await interaction.channel.send(embed=embed, view=TicketView())
-    await interaction.response.send_message("Panel sent!", ephemeral=True)
+    await interaction.channel.send(embed=embed, view=BuyPanel())
+    await interaction.response.send_message("Buy panel sent.", ephemeral=True)
 
 
-# -----------------------------
-# CLOSE COMMAND
-# -----------------------------
-@bot.tree.command(name="close", description="Close a ticket")
-@is_staff()
-async def close(interaction: discord.Interaction):
-    await interaction.channel.send("Closing ticket...")
-    await interaction.channel.delete()
+@bot.tree.command(name="sellpanel")
+@app_commands.checks.has_role(STAFF_ROLE_ID)
+async def sellpanel(interaction: discord.Interaction):
+
+    embed = discord.Embed(
+        title="💸 SELL PANEL",
+        description="Click below to request a sell ticket.",
+        color=discord.Color.blue()
+    )
+
+    await interaction.channel.send(embed=embed, view=SellPanel())
+    await interaction.response.send_message("Sell panel sent.", ephemeral=True)
 
 
-# -----------------------------
-# BAN COMMAND
-# -----------------------------
-@bot.tree.command(name="ban", description="Ban a user")
-@is_staff()
-async def ban(interaction: discord.Interaction, user: discord.Member, reason: str = "No reason provided"):
-    await user.ban(reason=reason)
-    await interaction.response.send_message(f"🔨 {user} banned. Reason: {reason}")
+@bot.tree.command(name="auctionpanel")
+@app_commands.checks.has_role(STAFF_ROLE_ID)
+async def auctionpanel(interaction: discord.Interaction):
+
+    embed = discord.Embed(
+        title="🏆 AUCTION PANEL",
+        description="Click below to start an auction ticket.",
+        color=discord.Color.gold()
+    )
+
+    await interaction.channel.send(embed=embed, view=AuctionPanel())
+    await interaction.response.send_message("Auction panel sent.", ephemeral=True)
 
 
 # -----------------------------
