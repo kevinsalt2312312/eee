@@ -88,7 +88,7 @@ class TicketView(discord.ui.View):
     async def sell(self, interaction: discord.Interaction, button: discord.ui.Button):
         await create_ticket(interaction, "sell")
 
-    @discord.ui.button(label="Auction Ticket", style=discord.ButtonStyle.gold, custom_id="auction_ticket")
+    @discord.ui.button(label="Auction Ticket", style=discord.ButtonStyle.success, custom_id="auction_ticket")
     async def auction(self, interaction: discord.Interaction, button: discord.ui.Button):
         await create_ticket(interaction, "auction")
 
